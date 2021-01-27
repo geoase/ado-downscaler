@@ -1,0 +1,16 @@
+name: ado_downscaler
+channels:
+    - conda-forge
+dependencies:
+    - python>=3.5
+    - esmpy
+    - xarray
+    - scipy
+    - statsmodels
+    - dask
+    - netCDF4
+    - bottleneck
+    - cfgrib
+    - pip
+    - pip:
+        - git+https://github.com/pangeo-data/xesmf.git

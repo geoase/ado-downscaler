@@ -1,19 +1,12 @@
+import logging
+
+import pathlib
 import xarray as xr
 import xesmf as xe
 import numpy as np
 
-import pathlib
-import os
-import logging
-
-import pyproj
-
-# import multiprocessing.popen_spawn_posix
-import dask
-
 from statsmodels.distributions.empirical_distribution import ECDF
 
-# TODO: leap day
 
 class Downscaler(object):
     """The :class:`Downscaler` class provides ...
@@ -23,23 +16,22 @@ class Downscaler(object):
         """
         Parameters
         ----------
-        cds_product : string
-            the cds product string
-        cds_filter : dict
-            the cds filter dictionary
-
+        xds_obs : :obj:`xarray.Dataset`
+            The observation dataset containing the observation history of a single variable
+        xds_mod : :obj:`xarray.Dataset`
+            The model dataset containing the model history of a single variable
         """
         # UERRA
         # Extract projection variable
         self.obs_proj = xds_obs["Lambert_Conformal"]
-        xds_obs = xds_obs.drop(["Lambert_Conformal"])
+        xds_obs = xds_obs.drop_vars(["Lambert_Conformal"])
 
         # Extract variable attributes
         self.obs_var_attrs = {k:v.attrs for k,v in xds_obs.variables.items()}
 
         xds_obs = xds_obs.sel(time=slice("1979-01-01","2018-12-31"))
 
-        xds_mod = xds_mod.drop(["crs"])
+        xds_mod = xds_mod.drop_vars(["crs"])
         xds_mod = xds_mod.reindex_like(xds_obs)
 
         self.regridder = xe.Regridder(xds_mod, xds_obs, 'bilinear')
@@ -94,7 +86,8 @@ class Downscaler(object):
             engine="cfgrib"
         )
         xds_sce = self.prepare_era5(xds_sce)
-        self.downscale(xds_sce, storage_path)
+        lst_paths = self.downscale(xds_sce, storage_path)
+        return lst_paths
 
     def downscale(self, xds_sce, tmp_storage_path):
         # Regrid scenario data and set x and y accordingly
@@ -112,6 +105,8 @@ class Downscaler(object):
 
         # Create storage directory if not existing
         pathlib.Path(tmp_storage_path).mkdir(parents=True, exist_ok=True)
+
+        lst_paths = []
 
         # Loop over days of year in xds_sce
         for idx, sce in xds_sce.groupby("grouping_zip"):
@@ -133,9 +128,9 @@ class Downscaler(object):
             obs = obs.stack(windowed_time=["time","window"], spatial_dim=["x","y"])
             sce = sce.stack(spatial_dim=["x","y"])
             # Rechunk
-            mod = mod.chunk({"windowed_time":-1,"spatial_dim":966})
-            obs = obs.chunk({"windowed_time":-1,"spatial_dim":966})
-            sce = sce.chunk({"time":-1,"spatial_dim":966})
+            mod = mod.chunk({"windowed_time":-1,"spatial_dim":'auto'})
+            obs = obs.chunk({"windowed_time":-1,"spatial_dim":'auto'})
+            sce = sce.chunk({"time":-1,"spatial_dim":'auto'})
 
             var_key = list(sce.keys())[0]
 
@@ -158,15 +153,10 @@ class Downscaler(object):
                 if k in self.obs_var_attrs:
                     v.attrs.update(self.obs_var_attrs[k])
             # Projection from uerra dataset
-            xds_qm["Lambert_Conformal"] = self.obs_proj
-
-            #xds_qm = xds_qm.sel(
-            #    x=slice(*eusalp_bounds[0::2]),
-            #    y=slice(*eusalp_bounds[1::2])
-            #)
+            xds_qm["Lambert_Conformal"] = None
+            xds_qm["Lambert_Conformal"].attrs = self.obs_proj.attrs
 
             # Encoding
-            # xds_qm.tp.encoding["_FillValue"] = None
             # Same time units in all files
             xds_qm.time.encoding["units"] = "days since 1979-01-01 00:00:00"
             xds_qm.time.encoding["dtype"] = "double"
@@ -178,10 +168,12 @@ class Downscaler(object):
                 "comment":"Bilinear interpolated ERA5 data, empirically bias corrected with quantile mapping and UERRA (1979/01-2018/12)",
                 "Conventions":"CF-1.7"
             })
-
-
+            file_path = f"{tmp_storage_path}/{idx[0]:02d}_{idx[1]:02d}_qm_era5.nc"
+            lst_paths.append(file_path)
             # Write downscaled data for doy to disk
-            xds_qm.to_netcdf(f"{tmp_storage_path}/{idx[0]:02d}_{idx[1]:02d}_qm_era5.nc")
+            xds_qm.to_netcdf(file_path)
+
+        return lst_paths
 
     @staticmethod
     def prepare_era5(xds):

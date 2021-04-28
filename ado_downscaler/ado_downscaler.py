@@ -30,9 +30,10 @@ class Downscaler(object):
         self.obs_var_attrs = {k:v.attrs for k,v in xds_obs.variables.items()}
 
         xds_obs = xds_obs.sel(time=slice("1979-01-01","2018-12-31"))
+        xds_mod = xds_mod.sel(time=slice("1979-01-01","2018-12-31"))
 
-        xds_mod = xds_mod.drop_vars(["crs"])
-        xds_mod = xds_mod.reindex_like(xds_obs)
+#        xds_mod = xds_mod.drop_vars(["crs"])
+#        xds_mod = xds_mod.reindex_like(xds_obs)
 
         self.regridder = xe.Regridder(xds_mod, xds_obs, 'bilinear')
 
@@ -89,7 +90,7 @@ class Downscaler(object):
         lst_paths = self.downscale(xds_sce, storage_path)
         return lst_paths
 
-    def downscale(self, xds_sce, tmp_storage_path):
+    def downscale(self, xds_sce, tmp_storage_path, spatial_chunk=3864):
         # Regrid scenario data and set x and y accordingly
         xds_sce = self.regridder(xds_sce)
         xds_sce["x"] = self.xds_obs.x
@@ -107,30 +108,32 @@ class Downscaler(object):
         pathlib.Path(tmp_storage_path).mkdir(parents=True, exist_ok=True)
 
         lst_paths = []
+#        lst_xds_sce = list(xds_sce.groupby("grouping_zip"))
 
         # Loop over days of year in xds_sce
         for idx, sce in xds_sce.groupby("grouping_zip"):
+#        for idx, sce in lst_xds_sce:
             # Extract days of year
             mod = xds_mod.isel(time=[group == idx for group in xds_mod.grouping_zip.data])
             obs = xds_obs.isel(time=[group == idx for group in xds_obs.grouping_zip.data])
-
             # Leap day: use 28th February from no leap years
             if idx == (2, 29):
                 mod_noyear = xds_mod.isel(time=[group == (2,28) for group in xds_mod.grouping_zip.data])
                 mod_noyear = mod_noyear.sel(time=~mod_noyear.time.dt.year.isin(mod.time.dt.year))
-                mod = xr.concat([mod, mod_noyear], "time")
+                mod = xr.concat([mod.load(), mod_noyear], "time")
                 obs_noyear = xds_obs.isel(time=[group == (2,28) for group in xds_obs.grouping_zip.data])
                 obs_noyear = obs_noyear.sel(time=~obs_noyear.time.dt.year.isin(obs.time.dt.year))
-                obs = xr.concat([obs, obs_noyear], "time")
+                obs = xr.concat([obs.load(), obs_noyear], "time")
 
             # Stack temporal and spatial dimensions
             mod = mod.stack(windowed_time=["time","window"], spatial_dim=["x","y"])
             obs = obs.stack(windowed_time=["time","window"], spatial_dim=["x","y"])
             sce = sce.stack(spatial_dim=["x","y"])
             # Rechunk
-            mod = mod.chunk({"windowed_time":-1,"spatial_dim":'auto'})
-            obs = obs.chunk({"windowed_time":-1,"spatial_dim":'auto'})
-            sce = sce.chunk({"time":-1,"spatial_dim":'auto'})
+            mod = mod.chunk({"windowed_time":-1,"spatial_dim":spatial_chunk})
+            obs = obs.chunk({"windowed_time":-1,"spatial_dim":spatial_chunk})
+            sce = sce.chunk({"time":-1,"spatial_dim":spatial_chunk})
+
 
             var_key = list(sce.keys())[0]
 
@@ -175,8 +178,9 @@ class Downscaler(object):
 
         return lst_paths
 
+
     @staticmethod
-    def prepare_era5(xds):
+    def prepare_era5(xds, only_full_days=True):
         """
         TODO
         Parameters
@@ -201,24 +205,32 @@ class Downscaler(object):
             xds[var_key] = xds[var_key]*1000
             xds[var_key].attrs["units"] = "kg m**-2"
 
-            # Define list of indices with full days
             # Special Case: Timestamp 06:00, accumulation of preceding 24h
-            idx_full_time = xds.time.resample(time="24H", base=7, loffset="-1H").count().idxmax("time")
-            xds = xds.resample(time="24H", base=7, loffset="-1H").sum()
+            args_resample = {"time":"24H", "base":7, "loffset":"-1H"}
+            func_resample = np.sum
 
-        elif "ssr" in var_key:
-            # Define list of indices with full days
-            idx_full_time = xds.time.resample(time="24H").count().idxmax("time")
-            xds = xds.resample(time="24H").sum()
+        elif any(ele in var_key for ele in ["ssr","str"]):
+            args_resample={"time":"24H","skipna":True}
+            func_resample = np.sum
+            xds = xds.dropna("time")
 
         else:
-            idx_full_time = xds.time.resample(time="24H").count().idxmax("time")
-            xds = xds.resample(time="24H").mean()
-
-        # Select only full days
-        xds = xds.sel(time=idx_full_time)
+            args_resample={"time":"24H"}
+            func_resample = np.mean
+        
+        if only_full_days:
+            # Define list of indices with full days
+            time_res_count = xds.time.resample(**args_resample).count()
+            idx_full_time = time_res_count.time.where(time_res_count == time_res_count.max())
+    
+            xds = xds.resample(**args_resample).reduce(func_resample)
+    
+            # Select only full days
+            xds = xds.sel(time=idx_full_time)
+        else:
+            xds = xds.resample(**args_resample).reduce(func_resample)
         # Invert latitude coordinate
-        xds = xds.reindex(lat=xds.lat[::-1])
+        #xds = xds.reindex(lat=xds.lat[::-1])
 
         return xds
 

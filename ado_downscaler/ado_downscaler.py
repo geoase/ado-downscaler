@@ -82,7 +82,7 @@ class Downscaler(object):
 
 
     def downscale_era5(self, sce_filepath, storage_path):
-        xds_sce = xr.open_dataset(
+        xds_sce = xr.open_mfdataset(
             sce_filepath,
             engine="cfgrib"
         )

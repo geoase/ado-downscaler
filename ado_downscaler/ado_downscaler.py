@@ -1,6 +1,8 @@
 import logging
-
+import os
 import pathlib
+import glob
+
 import xarray as xr
 import xesmf as xe
 import numpy as np
@@ -82,7 +84,7 @@ class Downscaler(object):
 
 
     def downscale_era5(self, sce_filepath, storage_path):
-        xds_sce = xr.open_mfdataset(
+        xds_sce = xr.open_dataset(
             sce_filepath,
             engine="cfgrib"
         )
@@ -90,7 +92,10 @@ class Downscaler(object):
         lst_paths = self.downscale(xds_sce, storage_path)
         return lst_paths
 
-    def downscale(self, xds_sce, tmp_storage_path, spatial_chunk=3864):
+    def downscale(self, xds_sce, tmp_storage_path, file_stem=None, spatial_chunk=3864):
+        if not file_stem:
+            file_stem = pathlib.Path(xds_sce.encoding.get("source")).stem
+
         # Regrid scenario data and set x and y accordingly
         xds_sce = self.regridder(xds_sce)
         xds_sce["x"] = self.xds_obs.x
@@ -108,11 +113,8 @@ class Downscaler(object):
         pathlib.Path(tmp_storage_path).mkdir(parents=True, exist_ok=True)
 
         lst_paths = []
-#        lst_xds_sce = list(xds_sce.groupby("grouping_zip"))
-
         # Loop over days of year in xds_sce
         for idx, sce in xds_sce.groupby("grouping_zip"):
-#        for idx, sce in lst_xds_sce:
             # Extract days of year
             mod = xds_mod.isel(time=[group == idx for group in xds_mod.grouping_zip.data])
             obs = xds_obs.isel(time=[group == idx for group in xds_obs.grouping_zip.data])
@@ -133,7 +135,6 @@ class Downscaler(object):
             mod = mod.chunk({"windowed_time":-1,"spatial_dim":spatial_chunk})
             obs = obs.chunk({"windowed_time":-1,"spatial_dim":spatial_chunk})
             sce = sce.chunk({"time":-1,"spatial_dim":spatial_chunk})
-
 
             var_key = list(sce.keys())[0]
 
@@ -161,8 +162,8 @@ class Downscaler(object):
 
             # Encoding
             # Same time units in all files
-            xds_qm.time.encoding["units"] = "days since 1979-01-01 00:00:00"
-            xds_qm.time.encoding["dtype"] = "double"
+#            xds_qm.time.encoding["units"] = "days since 1979-01-01 00:00:00"
+#            xds_qm.time.encoding["dtype"] = "double"
 
             xds_qm.attrs.update({
                 "title":"Quantile Mapped UERRA - ERA5",
@@ -171,7 +172,7 @@ class Downscaler(object):
                 "comment":"Bilinear interpolated ERA5 data, empirically bias corrected with quantile mapping and UERRA (1979/01-2018/12)",
                 "Conventions":"CF-1.7"
             })
-            file_path = f"{tmp_storage_path}/{idx[0]:02d}_{idx[1]:02d}_qm_era5.nc"
+            file_path = os.path.join(tmp_storage_path,f"{file_stem}_{idx[0]:02d}_{idx[1]:02d}_qm.nc")
             lst_paths.append(file_path)
             # Write downscaled data for doy to disk
             xds_qm.to_netcdf(file_path)
@@ -207,13 +208,11 @@ class Downscaler(object):
 
             # Special Case: Timestamp 06:00, accumulation of preceding 24h
             args_resample = {"time":"24H", "base":7, "loffset":"-1H"}
-            func_resample = np.sum
+            func_resample = np.nansum
 
         elif any(ele in var_key for ele in ["ssr","str"]):
-            args_resample={"time":"24H","skipna":True}
-            func_resample = np.sum
-            xds = xds.dropna("time")
-
+            args_resample={"time":"24H"}
+            func_resample = np.nansum
         else:
             args_resample={"time":"24H"}
             func_resample = np.mean
@@ -221,18 +220,28 @@ class Downscaler(object):
         if only_full_days:
             # Define list of indices with full days
             time_res_count = xds.time.resample(**args_resample).count()
-            idx_full_time = time_res_count.time.where(time_res_count == time_res_count.max())
+            idx_full_time = time_res_count.time.where(time_res_count == time_res_count.max(), drop=True)
     
             xds = xds.resample(**args_resample).reduce(func_resample)
     
             # Select only full days
             xds = xds.sel(time=idx_full_time)
         else:
-            xds = xds.resample(**args_resample).reduce(func_resample)
-        # Invert latitude coordinate
-        #xds = xds.reindex(lat=xds.lat[::-1])
+            xds = xds.dropna(dim="time").resample(**args_resample).reduce(func_resample)
 
         return xds
+
+
+    @staticmethod
+    def quantile_mapping(mod, obs, downscale, *args, **kwargs):
+        """
+        Quantile Mapping using empirical cumulative distribution function
+        """
+        mod_ecdf = ECDF(mod)
+        p = mod_ecdf(downscale) * 100
+        corr = np.percentile(obs[~np.isnan(obs)], p) - \
+               np.percentile(mod[~np.isnan(mod)], p)
+        return downscale + corr
 
 
     @staticmethod
@@ -256,12 +265,22 @@ class Downscaler(object):
 
 
     @staticmethod
-    def quantile_mapping(mod, obs, downscale, *args, **kwargs):
+    def merge_doy_files(input_path, output_file=None, *args, **kwargs):
         """
-        Quantile Mapping using empirical cumulative distribution function
+        Merge and sort day of year files
         """
-        mod_ecdf = ECDF(mod)
-        p = mod_ecdf(downscale) * 100
-        corr = np.percentile(obs[~np.isnan(obs)], p) - \
-               np.percentile(mod[~np.isnan(mod)], p)
-        return downscale + corr
+        file_paths = glob.glob(input_path)
+        if len(file_paths) == 0:
+            raise("No files found under provided path")
+
+        if not output_file:
+            output_file = "_".join(["qm",os.path.commonprefix(file_paths)])
+            if not output_file.endswith(".nc"):
+                ".".join([output_file,"nc"])
+
+        lst_xds = []
+        for p in file_paths:
+            lst_xds.append(xr.open_dataset(p, decode_cf=True, chunks=-1))
+
+        xds_qm_sorted = xr.concat(lst_xds, dim="time").sortby("time")
+        xds_qm_sorted.to_netcdf(output_file)

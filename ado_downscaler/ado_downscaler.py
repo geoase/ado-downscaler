@@ -265,7 +265,7 @@ class Downscaler(object):
 
 
     @staticmethod
-    def merge_doy_files(input_path, output_file=None, *args, **kwargs):
+    def merge_doy_files(input_path, *args, **kwargs):
         """
         Merge and sort day of year files
         """
@@ -273,14 +273,84 @@ class Downscaler(object):
         if len(file_paths) == 0:
             raise("No files found under provided path")
 
-        if not output_file:
-            output_file = "_".join(["qm",os.path.commonprefix(file_paths)])
-            if not output_file.endswith(".nc"):
-                ".".join([output_file,"nc"])
-
         lst_xds = []
         for p in file_paths:
             lst_xds.append(xr.open_dataset(p, decode_cf=True, chunks=-1))
 
         xds_qm_sorted = xr.concat(lst_xds, dim="time").sortby("time")
-        xds_qm_sorted.to_netcdf(output_file)
+
+        return xds_qm_sorted
+
+    @staticmethod
+    def cut_eusalp_domain(xds):
+        eusalp_bounds = (
+                2591436.355343933, 2146519.5114292144,
+                3628337.31222056, 3012927.872261234
+        )
+
+        xds = xds.sel(
+            x=slice(*eusalp_bounds[0::2]),
+            y=slice(*eusalp_bounds[1::2])
+        )
+
+        return xds
+
+    @staticmethod
+    def add_metadata(xds):
+        """
+        Add additional metadata for total precipitation and potential evapotranspiration
+        """
+        if "tp" in xds:
+            xds.attrs = {
+                "title":"Quantile Mapped Daily Precipitation sum from ERA5 data (downscaled using UERRA MESCAN-Surfex data)",
+                "institution":"Zentralanstalt fuer Meteorologie und Geodynamik",
+                "description":"Total precipitation is the amount of precipitation falling onto the ground/water surface. "\
+                "It includes all kind of precipitation forms as convective precipitation, large scale precipitation, "\
+                "liquid and solid precipitation. The amount is valid for a grid box, whereas values at timestamp represent "\
+                "the sum of the preceding 24 hours.",
+                "license":"Creative Commons Zero (CC0)",
+                "keywords":"PRECIPITATION, UERRA, ADO",
+                "providers":"Producer: Météo-France; Processor: ZAMG Austria",
+                "links":["https://datastore.copernicus-climate.eu/documents/uerra/D322_Lot1.4.1.2_User_guides_v3.3.pdf"],
+                "lineage":"Quantile Mapped ERA5 data is used in order to calculate the daily sum of precipitation.",
+                "comment":"Daily Precipitation sum quantile mapped ERA5 data.",
+                "source":"ERA5; UERRA MESCAN-Surfex",
+                "Conventions":"CF-1.7",
+            }
+
+            xds.tp.attrs= { 
+                "long_name":"Total Precipitation",
+                "units":"kg m**-2",
+                "grid_mapping":"Lambert_Conformal",
+                "standard_name":"precipitation_amount"
+            }
+
+        elif "pet" in xds:
+            xds.attrs = {
+                "title":"Quantile Mapped Potential Evapotranspiration following Penman-Monteith using UERRA MESCAN-Surfex data",
+                "institution":"Zentralanstalt fuer Meteorologie und Geodynamik",
+                "description":"The term evapotranspiration (ET) is commonly used to describe two processes "\
+                "of water loss from land surface to atmosphere, evaporation and transpiration. Evaporation "\
+                "is the process where liquid water is converted to water vapor (vaporization) and removed "\
+                "from sources such as the soil surface, wet vegetation, pavement, water bodies, etc. "\
+                "Transpiration consists of the vaporization of liquid water within a plant and subsequent "\
+                "loss of water as vapor through leaf stomata.",
+                "license":"Creative Commons Zero (CC0)",
+                "keywords":["PET", "UERRA", "ADO"],
+                "providers":"Producer: Météo-France; Processor: ZAMG Austria",
+                "links":["https://edis.ifas.ufl.edu/ae459","https://datastore.copernicus-climate.eu/documents/uerra/D322_Lot1.4.1.2_User_guides_v3.3.pdf"],
+                "lineage":"Quantile Mapped ERA5 data (mapped with UERRA MESCAN-Surfex data) is used in order to calculate PET following Penman-Monteith FAO-56 method",
+                "comment":"Quantile Mapped Potential Evapotranspiration calculated following Penman-Monteith FAO-56 method "\
+                "described in AE459. Daily averages/sums are used, whereas wind direction and speed are "\
+                "converted to u and v wind components before averaging.",
+                "source":"ERA5, UERRA MESCAN-Surfex",
+                "Conventions":"CF-1.7",
+            }
+
+            xds.pet.attrs = {
+                "long_name":"Potential Evapotranspiration",
+                "units":"mm day**-1",
+                "grid_mapping":"Lambert_Conformal"
+            }
+
+        return xds

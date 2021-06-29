@@ -227,7 +227,7 @@ class Downscaler(object):
             # Select only full days
             xds = xds.sel(time=idx_full_time)
         else:
-            xds = xds.dropna(dim="time").resample(**args_resample).reduce(func_resample)
+            xds = xds.dropna("time", how="all").resample(**args_resample).reduce(func_resample)
 
         return xds
 
@@ -277,7 +277,7 @@ class Downscaler(object):
         for p in file_paths:
             lst_xds.append(xr.open_dataset(p, decode_cf=True, chunks=-1))
 
-        xds_qm_sorted = xr.concat(lst_xds, dim="time").sortby("time")
+        xds_qm_sorted = xr.concat(lst_xds, dim="time", data_vars="minimal", coords="minimal").sortby("time")
 
         return xds_qm_sorted
 

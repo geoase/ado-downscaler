@@ -210,8 +210,8 @@ class Downscaler(object):
             args_resample = {"time":"24H", "base":7, "loffset":"-1H"}
             func_resample = np.nansum
 
-        elif any(ele in var_key for ele in ["ssr","str"]):
-            args_resample={"time":"24H"}
+        elif any(ele in var_key for ele in ["ssr","str","fdir","ssrd"]):
+            args_resample={"time":"24H", "closed":"right"}
             func_resample = np.nansum
         else:
             args_resample={"time":"24H"}

@@ -217,6 +217,10 @@ class Downscaler(object):
             args_resample={"time":"24H", "closed":"right"}
             func_resample = np.nansum
             xds[var_key].attrs["cell_methods"] = "time: sum"
+        elif "tx2m" in var_key:
+            args_resample={"time":"24H"}
+            func_resample = np.max
+            xds[var_key].attrs["cell_methods"] = "time: max"
         else:
             args_resample={"time":"24H"}
             func_resample = np.mean
@@ -361,6 +365,26 @@ class Downscaler(object):
             xds.pet.attrs = {
                 "long_name":"Potential Evapotranspiration",
                 "units":"mm day**-1",
+                "grid_mapping":"Lambert_Conformal"
+            }
+        
+        elif "tx2m" in xds:
+            xds.attrs = {
+                "title":"Quantile Mapped daily maximum temperature from ERA5 data (downscaled using UERRA MESCAN-Surfex data)",
+                "institution":"Zentralanstalt fuer Meteorologie und Geodynamik",
+                "license":"Creative Commons Zero (CC0)",
+                "keywords":"MAXIMUM TEMPERATURE, UERRA, ADO",
+                "providers":"Producer: Météo-France; Processor: ZAMG Austria",
+                "links":["https://datastore.copernicus-climate.eu/documents/uerra/D322_Lot1.4.1.2_User_guides_v3.3.pdf"],
+                "lineage":"Quantile Mapped ERA5 data is used in order to calculate the daily maximum temperature.",
+                "comment":"Daily maximum temperature quantile mapped ERA5 data.",
+                "source":"ERA5; UERRA MESCAN-Surfex",
+                "Conventions":"CF-1.7",
+            }
+            
+            xds.tx2m.attrs = {
+                "long_name":"2 metre maximum temperature",
+                "units":"K",
                 "grid_mapping":"Lambert_Conformal"
             }
 

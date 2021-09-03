@@ -210,7 +210,7 @@ class Downscaler(object):
             # loffset "-24H" shifts the time stamp by one day so that time bounds (0, 1 days) 
             # are consistent to the other variables. The resulting aggregate spans from 
             # (excluding) 06:00 of a day to (including) 06:00 of the following day
-            args_resample = {"time":"24H", "base":6, "closed":"right", "loffset":"-24H"}
+            args_resample = {"time":"24H", "base":6, "closed":"right", "label":"left"}
             func_resample = np.nansum
             xds[var_key].attrs["cell_methods"] = "time: sum"
         elif any(ele in var_key for ele in ["ssr","str","fdir","ssrd"]):
@@ -225,7 +225,7 @@ class Downscaler(object):
             args_resample={"time":"24H"}
             func_resample = np.mean
             xds[var_key].attrs["cell_methods"] = "time: mean"
-        
+
         if only_full_days:
             # Define list of indices with full days
             time_res_count = xds.time.resample(**args_resample).count()

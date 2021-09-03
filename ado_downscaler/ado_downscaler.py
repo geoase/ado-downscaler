@@ -278,17 +278,26 @@ class Downscaler(object):
             xds[var_key] = xds[var_key]*1000
             xds[var_key].attrs["units"] = "kg m**-2"
 
-            # Special Case: Timestamp 06:00, accumulation of preceding 24h
-            args_resample = {"time":"24H", "base":7, "loffset":"-1H"}
+            # Special Case: Timestamp 06:00, accumulation of 24h. 
+            # loffset "-24H" shifts the time stamp by one day so that time bounds (0, 1 days) 
+            # are consistent to the other variables. The resulting aggregate spans from 
+            # (excluding) 06:00 of a day to (including) 06:00 of the following day
+            args_resample = {"time":"24H", "base":6, "closed":"right", "loffset":"-24H"}
             func_resample = np.nansum
-
-        elif any(ele in var_key for ele in ["ssr","str"]):
+            xds[var_key].attrs["cell_methods"] = "time: sum"
+        elif any(ele in var_key for ele in ["ssr","str","fdir","ssrd"]):
+            args_resample={"time":"24H", "closed":"right"}
+            func_resample = np.nansum
+            xds[var_key].attrs["cell_methods"] = "time: sum"
+        elif "tx2m" in var_key:
             args_resample={"time":"24H"}
-            func_resample = np.nansum
+            func_resample = np.max
+            xds[var_key].attrs["cell_methods"] = "time: max"
         else:
             args_resample={"time":"24H"}
             func_resample = np.mean
-
+            xds[var_key].attrs["cell_methods"] = "time: mean"
+        
         if only_full_days:
             # Define list of indices with full days
             time_res_count = xds.time.resample(**args_resample).count()
@@ -299,7 +308,13 @@ class Downscaler(object):
             # Select only full days
             xds = xds.sel(time=idx_full_time)
         else:
-            xds = xds.resample(**args_resample).reduce(func_resample)
+            xds = xds.dropna("time", how="all").resample(**args_resample).reduce(func_resample)
+
+        # specify time_bnds for the above indicated cell_methods 
+        bounds = xr.DataArray([[0, 1] for i in range(xds.time.shape[0])], 
+        coords=[xds.time, [0, 1]], dims=["time", "bnds"])
+        xds["time_bnds"] = bounds
+        xds["time"].encoding["bounds"] = "time_bnds"
 
         return xds
 
@@ -359,7 +374,7 @@ class Downscaler(object):
         for p in file_paths:
             lst_xds.append(xr.open_dataset(p, decode_cf=True, chunks=-1))
 
-        xds_qm_sorted = xr.concat(lst_xds, dim="time").sortby("time")
+        xds_qm_sorted = xr.concat(lst_xds, dim="time", data_vars="minimal", coords="minimal").sortby("time")
 
         return xds_qm_sorted
 
@@ -445,6 +460,26 @@ class Downscaler(object):
             xds.pet.attrs = {
                 "long_name":"Potential Evapotranspiration",
                 "units":"mm day**-1",
+                "grid_mapping":"Lambert_Conformal"
+            }
+        
+        elif "tx2m" in xds:
+            xds.attrs = {
+                "title":"Quantile Mapped daily maximum temperature from ERA5 data (downscaled using UERRA MESCAN-Surfex data)",
+                "institution":"Zentralanstalt fuer Meteorologie und Geodynamik",
+                "license":"Creative Commons Zero (CC0)",
+                "keywords":"MAXIMUM TEMPERATURE, UERRA, ADO",
+                "providers":"Producer: Météo-France; Processor: ZAMG Austria",
+                "links":["https://datastore.copernicus-climate.eu/documents/uerra/D322_Lot1.4.1.2_User_guides_v3.3.pdf"],
+                "lineage":"Quantile Mapped ERA5 data is used in order to calculate the daily maximum temperature.",
+                "comment":"Daily maximum temperature quantile mapped ERA5 data.",
+                "source":"ERA5; UERRA MESCAN-Surfex",
+                "Conventions":"CF-1.7",
+            }
+            
+            xds.tx2m.attrs = {
+                "long_name":"2 metre maximum temperature",
+                "units":"K",
                 "grid_mapping":"Lambert_Conformal"
             }
 

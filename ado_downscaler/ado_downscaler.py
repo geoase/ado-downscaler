@@ -183,11 +183,15 @@ class Downscaler(object):
     @staticmethod
     def prepare_era5(xds, only_full_days=True):
         """
-        TODO
+        Preparation of the dimensions, unit conversion as well as temporal 
+        aggregation from hourly to daily of ERA5 reanalysis data
+
         Parameters
         ----------
-        cds_product : string
-            the cds product string
+        xds : :obj:`xarray.Dataset`
+            The raw houly ERA5 dataset
+        only_full_days : bool 
+            If True, incomplete days are dropped at temporal aggregation.
 
         """
         xr.set_options(keep_attrs=True)

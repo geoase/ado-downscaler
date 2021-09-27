@@ -42,14 +42,14 @@ class Downscaler(object):
         xds_mod : :obj:`xarray.Dataset`
             The model dataset containing the model history of a single variable
         """
+        # # TODO: UERRA specific
+        # # Extract projection variable
+        # self.obs_proj = xds_obs["Lambert_Conformal"]
+        # xds_obs = xds_obs.drop_vars(["Lambert_Conformal"])
 
-        # TODO: UERRA specific
-        # Extract projection variable
-        self.obs_proj = xds_obs["Lambert_Conformal"]
-        xds_obs = xds_obs.drop_vars(["Lambert_Conformal"])
-
-        xds_obs = xds_obs.sel(time=slice("1979-01-01","2018-12-31"))
-        xds_mod = xds_mod.sel(time=slice("1979-01-01","2018-12-31"))
+        # Overlapping time dimension
+        xds_obs, xds_mod = xr.align(xds_obs, xds_mod)
+        logging.info(f"Overlapping dimensions: {xds_obs.dims}")
 
         # Extract variable attributes
         self.obs_var_attrs = {k:v.attrs for k,v in xds_obs.variables.items()}
@@ -86,6 +86,7 @@ class Downscaler(object):
                 obs_filepath,
                 parallel=True,
                 decode_cf=True,
+                decode_coords="all",
                 **kwargs
             )
 
@@ -93,6 +94,7 @@ class Downscaler(object):
                 mod_filepath,
                 parallel=True,
                 decode_cf=True,
+                decode_coords="all",
                 **kwargs
             )
 
@@ -119,7 +121,8 @@ class Downscaler(object):
         """
         xds_sce = xr.open_dataset(
             sce_filepath,
-            engine="cfgrib"
+            decode_coords="all",
+            engine="cfgrib",
         )
         # Daily aggregation
         xds_sce = self.prepare_era5(xds_sce)
@@ -129,7 +132,7 @@ class Downscaler(object):
         return lst_paths
 
 
-    def downscale(self, xds_sce, tmp_storage_path, file_stem=None, spatial_chunk=3864):
+    def downscale(self, xds_sce, tmp_storage_path, file_prefix=None):
         """Downscale cf-conformal scenario data. Writes one file per day of year (max
         366 files). Leap days are using temporal windows around the 28th of
         February from no leap years.
@@ -140,11 +143,8 @@ class Downscaler(object):
             scenario model data file
         tmp_storage_path: string
             storage path for files
-        file_stem: string
+        file_prefix: string
             if specified this string is used as prefix for all output files
-        spatial_chunk: integer
-            chunk size of stacked spatial dimension during call of parallelized
-            downscaling function
 
         Returns
         -------
@@ -152,11 +152,11 @@ class Downscaler(object):
             Paths of downscaled files (one file per day of year)
 
         """
-        if not file_stem:
+        if not file_prefix:
             try:
-                file_stem = pathlib.Path(xds_sce.encoding.get("source")).stem
+                file_prefix = pathlib.Path(xds_sce.encoding.get("source")).stem
             except:
-                file_stem = "doy"
+                file_prefix = "doy"
 
         # Regrid scenario data and set x and y accordingly
         xds_sce = self.regridder(xds_sce)
@@ -164,12 +164,12 @@ class Downscaler(object):
         xds_sce["y"] = self.xds_obs.y
 
         # Assign new coordinate in order to group by days of year
-        xds_sce = self.assign_doy_coord(xds_sce)
+        xds_sce = self._assign_doy_coord(xds_sce)
 
-        xds_mod = self.assign_doy_coord(self.xds_mod)
+        xds_mod = self._assign_doy_coord(self.xds_mod)
         xds_mod = xds_mod.rolling(time=30, center=True).construct("window")
 
-        xds_obs = self.assign_doy_coord(self.xds_obs)
+        xds_obs = self._assign_doy_coord(self.xds_obs)
         xds_obs = xds_obs.rolling(time=30, center=True).construct("window")
 
         # Create storage directory if not existing
@@ -198,10 +198,10 @@ class Downscaler(object):
             obs = obs.stack(windowed_time=["time","window"], spatial_dim=["x","y"])
             sce = sce.stack(spatial_dim=["x","y"])
 
-            # Rechunk
-            mod = mod.chunk({"windowed_time":-1,"spatial_dim":spatial_chunk})
-            obs = obs.chunk({"windowed_time":-1,"spatial_dim":spatial_chunk})
-            sce = sce.chunk({"time":-1,"spatial_dim":spatial_chunk})
+            # Auto rechunk spatial dimension
+            mod = mod.chunk({"windowed_time":-1,"spatial_dim":"auto"})
+            obs = obs.chunk({"windowed_time":-1, "spatial_dim": mod.sizes["spatial_dim"]})
+            sce = sce.chunk({"time":-1,"spatial_dim": mod.sizes["spatial_dim"]})
 
             # Name of first and only variable
             var_key = list(sce.keys())[0]
@@ -219,7 +219,7 @@ class Downscaler(object):
                 output_dtypes=[sce[var_key].dtype]
             )
             # Unstack and transpose dims (recommended order "time", "y", "x")
-            xds_qm = xds_qm.unstack().transpose("time","y","x")
+            xds_qm = xds_qm.unstack().transpose("time","y","x", ...)
 
             # Variable attributes from uerra dataset
             for k,v in xds_qm.variables.items():
@@ -237,8 +237,9 @@ class Downscaler(object):
                 "comment":"Bilinear interpolated ERA5 data, empirically bias corrected with quantile mapping and UERRA (1979/01-2018/12)",
                 "Conventions":"CF-1.7"
             })
-            file_path = os.path.join(tmp_storage_path,f"{file_stem}_{idx[0]:02d}_{idx[1]:02d}_qm.nc")
+            file_path = os.path.join(tmp_storage_path,f"{file_prefix}_{idx[0]:02d}_{idx[1]:02d}_qm.nc")
             lst_paths.append(file_path)
+
 
             # Write downscaled data for doy to disk
             xds_qm.to_netcdf(file_path)

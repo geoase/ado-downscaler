@@ -226,10 +226,6 @@ class Downscaler(object):
                 if k in self.obs_var_attrs:
                     v.attrs.update(self.obs_var_attrs[k])
 
-            # Projection from uerra dataset
-            xds_qm["Lambert_Conformal"] = None
-            xds_qm["Lambert_Conformal"].attrs = self.obs_proj.attrs
-
             xds_qm.attrs.update({
                 "title":"Quantile Mapped UERRA - ERA5",
                 "institution":"Zentralanstalt fuer Meteorologie und Geodynamik",

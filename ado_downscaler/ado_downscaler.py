@@ -257,7 +257,9 @@ class Downscaler(object):
         ----------
         xds: :obj:`xarray.Dataset`
             ERA5 dataset
-
+        only_full_days : bool 
+            If True, incomplete days are dropped at temporal aggregation
+            
         Returns
         -------
         :obj:`xarray.Dataset`

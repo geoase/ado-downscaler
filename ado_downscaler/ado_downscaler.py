@@ -405,6 +405,19 @@ class Downscaler(object):
         return xds
 
     @staticmethod
+    def post_process(xds):
+        """
+        TODO
+        - Relative Humidity add small value to zero humidity
+        - No negative precipitation
+        - No negative PET
+        """
+        # Add small value where relative humidity is zero
+        #xds_uerra_rh["r2"] = xds_uerra_rh.r2.where(xds_uerra_rh.r2 != 0).fillna(0.00001)
+
+        pass
+
+    @staticmethod
     def _add_metadata(xds):
         """
         Add additional metadata for total precipitation and potential evapotranspiration
@@ -416,7 +429,7 @@ class Downscaler(object):
                 "description":"Total precipitation is the amount of precipitation falling onto the ground/water surface. "\
                 "It includes all kind of precipitation forms as convective precipitation, large scale precipitation, "\
                 "liquid and solid precipitation. The amount is valid for a grid box, whereas values at timestamp represent "\
-                "the sum of the preceding 24 hours.",
+                "the sum of the following 24 hours.",
                 "license":"Creative Commons Zero (CC0)",
                 "keywords":"PRECIPITATION, UERRA, ADO",
                 "providers":"Producer: Météo-France; Processor: ZAMG Austria",

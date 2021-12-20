@@ -19,6 +19,7 @@ import glob
 import xarray as xr
 import xesmf as xe
 import numpy as np
+import dask
 
 from statsmodels.distributions.empirical_distribution import ECDF
 
@@ -42,13 +43,9 @@ class Downscaler(object):
         xds_mod : :obj:`xarray.Dataset`
             The model dataset containing the model history of a single variable
         """
-        # # TODO: UERRA specific
-        # # Extract projection variable
-        # self.obs_proj = xds_obs["Lambert_Conformal"]
-        # xds_obs = xds_obs.drop_vars(["Lambert_Conformal"])
-
         # Overlapping time dimension
-        xds_obs, xds_mod = xr.align(xds_obs, xds_mod)
+        with dask.config.set(**{'array.slicing.split_large_chunks': False}):
+            xds_obs, xds_mod = xr.align(xds_obs, xds_mod)
         logging.info(f"Overlapping dimensions: {xds_obs.dims}")
 
         # Extract variable attributes
@@ -199,10 +196,12 @@ class Downscaler(object):
             obs = obs.stack(windowed_time=["time","window"], spatial_dim=["x","y"])
             sce = sce.stack(spatial_dim=["x","y"])
 
+            import ipdb; ipdb.set_trace();
             # Auto rechunk spatial dimension
             mod = mod.chunk({"windowed_time":-1,"spatial_dim":"auto"})
-            obs = obs.chunk({"windowed_time":-1, "spatial_dim": mod.sizes["spatial_dim"]})
-            sce = sce.chunk({"time":-1,"spatial_dim": mod.sizes["spatial_dim"]})
+            mod = mod.unify_chunks()
+            obs = obs.chunk({"windowed_time":-1, "spatial_dim": mod.chunks["spatial_dim"]})
+            sce = sce.chunk({"time":-1,"spatial_dim": mod.chunks["spatial_dim"]})
 
             # Name of first and only variable
             var_key = list(sce.keys())[0]
@@ -314,6 +313,7 @@ class Downscaler(object):
         bounds = xr.DataArray([[0, 1] for i in range(xds.time.shape[0])], 
         coords=[xds.time, [0, 1]], dims=["time", "bnds"])
         xds = xds.assign_coords(time_bnds=bounds)
+        xds = xds.drop("bnds")
         xds["time"].encoding["bounds"] = "time_bnds"
 
         return xds

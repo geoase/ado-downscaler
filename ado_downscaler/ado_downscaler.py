@@ -196,7 +196,6 @@ class Downscaler(object):
             obs = obs.stack(windowed_time=["time","window"], spatial_dim=["x","y"])
             sce = sce.stack(spatial_dim=["x","y"])
 
-            import ipdb; ipdb.set_trace();
             # Auto rechunk spatial dimension
             mod = mod.chunk({"windowed_time":-1,"spatial_dim":"auto"})
             mod = mod.unify_chunks()

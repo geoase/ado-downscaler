@@ -122,6 +122,7 @@ class Downscaler(object):
         xds_sce = xr.open_dataset(
             sce_filepath,
             decode_coords="all",
+            decode_cf=True,
             engine="cfgrib",
         )
         # Daily aggregation
@@ -312,7 +313,7 @@ class Downscaler(object):
         # specify time_bnds for the above indicated cell_methods 
         bounds = xr.DataArray([[0, 1] for i in range(xds.time.shape[0])], 
         coords=[xds.time, [0, 1]], dims=["time", "bnds"])
-        xds["time_bnds"] = bounds
+        xds = xds.assign_coords(time_bnds=bounds)
         xds["time"].encoding["bounds"] = "time_bnds"
 
         return xds

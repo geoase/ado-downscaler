@@ -225,6 +225,7 @@ class Downscaler(object):
                 if k in self.obs_var_attrs:
                     v.attrs.update(self.obs_var_attrs[k])
 
+            xds_qm = self.cut_eusalp_domain(xds_qm)
             xds_qm.attrs.update({
                 "title":"Quantile Mapped UERRA - ERA5",
                 "institution":"Zentralanstalt fuer Meteorologie und Geodynamik",

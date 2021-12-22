@@ -233,9 +233,14 @@ class Downscaler(object):
                 "comment":"Bilinear interpolated ERA5 data, empirically bias corrected with quantile mapping and UERRA (1979/01-2018/12)",
                 "Conventions":"CF-1.7"
             })
-            file_path = os.path.join(tmp_storage_path,f"{file_prefix}_{idx[0]:02d}_{idx[1]:02d}_qm.nc")
-            lst_paths.append(file_path)
 
+            # Check if day and month is in file_prefix and adapt filename accordingly
+            if all(f"{x:02d}" in file_prefix for x in list(idx)):
+                file_path = os.path.join(tmp_storage_path,f"{file_prefix}_qm.nc")
+            else:
+                file_path = os.path.join(tmp_storage_path,f"{file_prefix}_{idx[0]:02d}_{idx[1]:02d}_qm.nc")
+
+            lst_paths.append(file_path)
 
             # Write downscaled data for doy to disk
             xds_qm.to_netcdf(file_path)

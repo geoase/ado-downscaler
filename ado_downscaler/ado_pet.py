@@ -78,40 +78,12 @@ def calculate_pet(dct_paths):
     
     xds_pet = xds_temp.drop("t2m")
     xds_pet["pet"] = ET_0
-#    xds_pet = xds_pet.drop(["step","heightAboveGround","surface","valid_time","lat","lon","number"])
-    
-    #xds_pet = Downscaler.cut_eusalp_domain(xds_pet)
     
     xds_pet["pet"].attrs = {
         "long_name":"Potential Evapotranspiration",
         "units":"mm day**-1",
         "grid_mapping":"Lambert_Conformal"
     }
-    
-#    xds_pet["y"].attrs = {
-#        "standard_name":"projection_y_coordinate",
-#        "long_name":"y coordinate of projection",
-#        "units":"m"}
-#    
-#    xds_pet["x"].attrs = {
-#        "standard_name":"projection_x_coordinate",
-#        "long_name":"x coordinate of projection",
-#        "units":"m"}
-#    
-#    xds_pet["time"].attrs = {
-#        "standard_name":"time",
-#        "long_name":"time"
-#    }
-    
-#    xds_pet["Lambert_Conformal"] = None
-#    xds_pet["Lambert_Conformal"].attrs = {
-#        "grid_mapping_name":"lambert_conformal_conic",
-#        "standard_parallel":(50.,50.),
-#        "longitude_of_central_meridian":8. ,
-#        "latitude_of_projection_origin":50.,
-#        "false_easting":2937018.5829291,
-#        "false_northing":2937031.41074803,
-#        "earth_radius":6371229.}
     
     # DataSet Attributes
     xds_pet.attrs = {
@@ -135,12 +107,9 @@ def calculate_pet(dct_paths):
         "Conventions": "CF-1.7",
     }
     
-    # Encoding
-#    xds_pet["pet"].encoding["coordinates"] = 'lat lon'
-    #xds_uerra_pr["tp"].encoding["_FillValue"] = netCDF4.default_fillvals["f8"]
-    
     # COARDS order of dimensions T,Y,X
-#    xds_pet = xds_pet.transpose("time","y","x")
+    xds_pet = xds_pet.transpose("time","y","x")
     
-    xds_pet.to_netcdf("./qm-era5_potential_evapotranspiration_corrected.nc")
+    file_suffix = dct_paths["2m_temperature"][len("2m_temperature"):]
+    xds_pet.to_netcdf(f"potential_evapotranspiration_{file_suffix}")
     

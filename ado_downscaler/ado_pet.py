@@ -1,13 +1,25 @@
 import xarray as xr
 import os
 import numpy as np
-
 import dask
-
 from ado_downscaler import Downscaler
 
+def calculate_pet(dct_paths, storage_path):
+    """
+    calculate potential evapotranspiration
 
-def calculate_pet(dct_paths):
+    Parameters
+    ----------
+    dct_paths : dict
+        dictionary with input paths for each variable 
+        (2m_dewpoint_temperature, 2m_temperature, 
+        surface_net_solar_radiation, surface_net_thermal_radiation, 
+        10m_u_component_of_wind, 10m_v_component_of_wind,
+        total_precipitation)
+    storage_path : string
+        storage path of data collection as string
+    """
+        
     xr.set_options(keep_attrs=True)
     
     # Prepare Data ==========================================
@@ -20,9 +32,6 @@ def calculate_pet(dct_paths):
     xda_ws = xr.ufuncs.sqrt(xds_u.u10**2+xds_v.v10**2)
     xda_ws2 = xda_ws*(4.87/(xr.ufuncs.log(67.8*10-5.42)))
 
-    import ipdb; ipdb.set_trace();
-    
-    
     # Dewpoint Temperature ------------------------------------
     # https://journals.ametsoc.org/view/journals/bams/86/2/bams-86-2-225.xml?tab_body=pdf
     xds_dewpoint = xr.open_dataset(dct_paths["2m_dewpoint_temperature"], decode_coords="all", decode_cf=True)
@@ -111,5 +120,5 @@ def calculate_pet(dct_paths):
     xds_pet = xds_pet.transpose("time","y","x")
     
     file_suffix = dct_paths["2m_temperature"][len("2m_temperature"):]
-    xds_pet.to_netcdf(f"potential_evapotranspiration_{file_suffix}")
+    xds_pet.to_netcdf(os.path.join(storage_path, f"potential_evapotranspiration_{file_suffix}"))
     

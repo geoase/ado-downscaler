@@ -282,15 +282,11 @@ class Downscaler(object):
             xds[var_key] = xds[var_key]*1000
             xds[var_key].attrs["units"] = "kg m**-2"
 
-            # Special Case: Timestamp 06:00, accumulation of 24h. 
-            # loffset "-24H" shifts the time stamp by one day so that time bounds (0, 1 days) 
-            # are consistent to the other variables. The resulting aggregate spans from 
-            # (excluding) 06:00 of a day to (including) 06:00 of the following day
-            args_resample = {"time":"24H", "base":6, "closed":"right", "label":"left"}
+            args_resample={"time":"24H", "closed":"left"}
             func_resample = np.nansum
             xds[var_key].attrs["cell_methods"] = "time: sum"
         elif any(ele in var_key for ele in ["ssr","str","fdir","ssrd"]):
-            args_resample={"time":"24H", "closed":"right"}
+            args_resample={"time":"24H", "closed":"left"}
             func_resample = np.nansum
             xds[var_key].attrs["cell_methods"] = "time: sum"
         elif "tx2m" in var_key:

@@ -290,7 +290,7 @@ class Downscaler(object):
             func_resample = np.nansum
             xds[var_key].attrs["cell_methods"] = "time: sum"
         elif any(ele in var_key for ele in ["ssr","str","fdir","ssrd"]):
-            args_resample={"time":"24H", "closed":"right"}
+            args_resample={"time":"24H", "closed":"left"}
             func_resample = np.nansum
             xds[var_key].attrs["cell_methods"] = "time: sum"
         elif "tx2m" in var_key:

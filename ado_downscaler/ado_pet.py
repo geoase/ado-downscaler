@@ -119,6 +119,6 @@ def calculate_pet(dct_paths, storage_path):
     # COARDS order of dimensions T,Y,X
     xds_pet = xds_pet.transpose("time","y","x","bnds", missing_dims='ignore')
     
-    file_suffix = dct_paths["2m_temperature"][len("2m_temperature"):]
+    file_suffix = os.path.basename(dct_paths["2m_temperature"])[len("2m_temperature"):]
     xds_pet.to_netcdf(os.path.join(storage_path, f"potential_evapotranspiration_{file_suffix}"))
     
